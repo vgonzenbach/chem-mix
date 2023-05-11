@@ -1,0 +1,191 @@
+---
+title: "Network Visualization: Relationship of Chemical Mixtures to Neurotransmitter level, Cortical Thickness and Brain Volumes"
+editor: visual
+author: "Virgilio Gonzenbach"
+date: "`r Sys.Date()`"
+
+format: 
+  html:
+    self-contained: true
+    page-layout: full
+    toc: true
+    toc-title: 'Contents'
+    toc-float: true
+    toc-location: left
+    df-print: paged
+    theme: spacelab
+    code-fold: true
+    code-overflow: wrap
+    code-tools: true
+    
+execute:
+  echo: true
+  error: false
+  warning: false
+  message: false
+  results: asis
+  freeze: auto
+---
+
+```{r data_prep}
+#| message: false
+library(tidyr)
+library(dplyr)
+library(network)
+library(stringr)
+library(igraph)
+library(visNetwork)
+
+nt_df <- read.csv(here::here('data/neurotransmitter.csv'), row.names = NULL)
+thick_df <- read.csv(here::here('data/cortical_thickness.csv'))
+vol_df <- read.csv(here::here('data/volumes.csv'))
+
+# transform data
+nt_df$X <- NULL; thick_df$X <- NULL; vol_df$X <- NULL
+nt_df <- nt_df %>% 
+  pivot_longer(cols = c("mI", "NAA", "Cr", "Cho", "Glu", "Glx"), 
+               names_to = 'variable', 
+               values_to = 'p.values') %>% 
+  tibble::add_column(var.type = 'neuro_transmitter', .before  = 'variable')
+thick_df <- thick_df %>% 
+  rename(variable = brain_region) %>% 
+  tibble::add_column(var.type = 'cortical_thickness', .before  = 'variable')
+vol_df <- vol_df %>% 
+  rename(variable = brain_region) %>% 
+  tibble::add_column(var.type = 'volume', .before  = 'variable')
+  
+df <- rbind(nt_df, 
+            thick_df, 
+            vol_df)
+```
+
+The present notebook visualizes significant relationships of chemical mixtures to different outcomes: neurotransmitter levels, cortical thickness estimates and brain volumes. For the current version, we focus on a set of measurements taken at **birth**.
+
+```{r, echo = FALSE}
+df %>% 
+  filter(window == 'birth')
+```
+
+The nodes (or vertices) of the network must be represented in a `data.frame`.
+
+```{r}
+# make nodes and links data.frame
+node_name <- df %>% 
+  filter(window == 'birth') %>% 
+  unite('node', 'variable', 'var.type', sep = ' ') %>% 
+  select(OPE, node) %>% 
+  unlist() %>% 
+  unique()
+
+node_type <- c(recode(node_name, `BCEtP` = 'Chem. Mix.', `BDCPP` = 'Chem. Mix.', `DBuP` = 'Chem. Mix.', `DPHP` = 'Chem. Mix.')[1:4],
+               separate(data.frame(node_name), node_name, ' ', into = c('1', '2'))[,"2"] %>% na.omit())
+
+
+nodes <- data.frame(id = seq_len(length(node_name)),
+                    node_name = node_name %>% 
+                      str_replace_all('cortical_thickness', '(CT)') %>% 
+                      str_replace_all('neuro_transmitter', '') %>% 
+                      str_replace_all('volume', '(Volume)'),
+                    node_type = node_type)
+nodes
+```
+
+Similarly, below is the `data.frame` representing the edges (or links)
+
+```{r}
+id_node <- function(node.name){
+  nodes %>% 
+    filter(node_name == node.name) %>% 
+    pull(id)
+}
+
+links <- df %>% 
+  filter(window == 'birth') %>% 
+  unite(var, variable, var.type ,sep = ' ') %>% 
+  rename(from = OPE,
+         to = var ) %>% 
+  mutate(to = to %>% 
+         str_replace_all('cortical_thickness', '(CT)') %>%
+         str_replace_all('neuro_transmitter', '') %>%
+         str_replace_all('volume', '(Volume)')) %>% 
+  mutate(to = purrr::map_int(to, id_node),
+         from = purrr::map_int(from, id_node)) %>% 
+  select(from, to)
+
+links
+```
+
+```{r}
+net <- graph_from_data_frame(d=links, vertices=nodes, directed=T) 
+# Generate colors based on media type:
+colrs <- setNames(c("gray50", "tomato", "gold", "dodgerblue"), unique(node_type))
+
+V(net)$color <- recode(V(net)$node_type, !!!colrs)
+V(net)$label <- NA
+V(net)$size <- 20
+
+E(net)$arrow.size <- .4
+E(net)$edge.color <- "gray80"
+
+graph_attr(net, "layout") <- layout_with_kk
+
+plot(net) 
+legend(x=-1.5, y=-1.1, c("Chem. Mix.","Neurotransmitters", "Volumes", "Thickness"), pch=21,
+       col="#777777", pt.bg=colrs, pt.cex=2, cex=.8, bty="n", ncol=1)
+```
+
+```{r}
+# sample n evenly spaced point along a circle (or arc) of radius r (theta = 2 * pi)
+n = 23
+r = 3
+#start = c(1,0)
+#theta = 2 * pi
+
+layout_in_polar <- function(n, r, theta = 2 * pi){
+  start = c(r, 0)
+  # get arclength
+  l <- r * theta / n
+  L <- seq(1, n - 1) * l # list of cumulative arclengths
+  x <- r * cos(L)
+  y <- r * sin(L)
+  rbind(start, data.frame(x, y)) %>% 
+    as.matrix() %>% 
+    unname()
+}
+
+graph_attr(net, "layout") <- rbind(layout_in_polar(4, 1), 
+                                   layout_in_polar(23, 3))
+
+plot(net) 
+legend(x=-1.5, y=-1.1, c("Chem. Mix.","Neurotransmitters", "Volumes", "Thickness"), pch=21,
+       col="#777777", pt.bg=colrs, pt.cex=2, cex=.8, bty="n", ncol=1)
+```
+
+```{r}
+# We'll start by adding new node and edge attributes to our dataframes. 
+vis.nodes <- nodes
+vis.links <- links
+
+vis.nodes$shape  <- "dot"  
+vis.nodes$shadow <- TRUE # Nodes will drop shadow
+vis.nodes$title  <- vis.nodes$node_name # Text on click
+vis.nodes$label  <- vis.nodes$node_name # Node label
+#vis.nodes$size   <- vis.nodes$audience.size # Node size
+vis.nodes$borderWidth <- 2 # Node border width
+
+vis.nodes$color.background <- V(net)$color
+vis.nodes$color.border <- "black"
+vis.nodes$color.highlight.background <- "orange"
+vis.nodes$color.highlight.border <- "darkred"
+
+vis.links$width <- 1 # line width
+vis.links$color <- "gray"    # line color  
+vis.links$arrows <- "to" # arrows: 'from', 'to', or 'middle'
+vis.links$smooth <- FALSE    # should the edges be curved?
+vis.links$shadow <- FALSE    # edge shadow
+
+visnet <- visNetwork(vis.nodes, vis.links)
+visnet %>% 
+  visLayout(randomSeed = 56) %>% 
+  visOptions(highlightNearest = TRUE, selectedBy = "node_type")
+```

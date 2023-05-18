@@ -1,0 +1,5 @@
+,OPE,brain_region,p.values
+4,BDCPP,insula,0.019
+1,BCEtP,rh_frontalpole,0.026
+3,BDCPP,lh_posteriorcingulate,0.035
+2,BCEtP,rh_temporalpole,0.041

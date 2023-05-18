@@ -17,10 +17,13 @@ format:
     code-fold: true
     code-overflow: wrap
     code-tools: true
+    fig-width: 10
+    fig-height: 7
     
 execute:
   echo: true
   error: false
+  cache: false
   warning: false
   message: false
   results: asis
@@ -36,156 +39,217 @@ library(stringr)
 library(igraph)
 library(visNetwork)
 
-nt_df <- read.csv(here::here('data/neurotransmitter.csv'), row.names = NULL)
-thick_df <- read.csv(here::here('data/cortical_thickness.csv'))
-vol_df <- read.csv(here::here('data/volumes.csv'))
-
-# transform data
-nt_df$X <- NULL; thick_df$X <- NULL; vol_df$X <- NULL
-nt_df <- nt_df %>% 
+# Read in neurotransmitter data
+nt_df <- read.csv(here::here('data/neurotransmitter_interaction.csv'), row.names = NULL) %>% 
+  select(-X) %>% 
   pivot_longer(cols = c("mI", "NAA", "Cr", "Cho", "Glu", "Glx"), 
                names_to = 'variable', 
                values_to = 'p.values') %>% 
-  tibble::add_column(var.type = 'neuro_transmitter', .before  = 'variable')
-thick_df <- thick_df %>% 
+  tibble::add_column(var.type = 'Neurotransmitter', .after  = 'variable') %>% 
+  filter(p.values < 0.1) %>% 
+   tibble::add_column(term = 'interaction')
+
+# Read in cortical thickness data
+thick_df <- rbind(
+  here::here('data/cortical_thickness_interaction.csv') %>% 
+    read.csv() %>%
+    tibble::add_column(term = 'interaction'),
+  here::here('data/cortical_thickness_main.csv') %>% 
+    read.csv() %>%
+    tibble::add_column(window = 'all', .after = 'OPE') %>% 
+    tibble::add_column(term = 'main')
+  )  %>% 
+  select(-X) %>% 
   rename(variable = brain_region) %>% 
-  tibble::add_column(var.type = 'cortical_thickness', .before  = 'variable')
-vol_df <- vol_df %>% 
-  rename(variable = brain_region) %>% 
-  tibble::add_column(var.type = 'volume', .before  = 'variable')
+  tibble::add_column(var.type = 'Cortical Thickness', .after  = 'variable')
   
+# Read in volumes data
+vol_df <- rbind(
+  here::here('data/volumes_interaction.csv') %>% 
+    read.csv() %>%
+    tibble::add_column(term = 'interaction'),
+  here::here('data/volumes_main.csv') %>% 
+    read.csv() %>%
+    tibble::add_column(window = 'all', .after = 'OPE') %>% 
+    tibble::add_column(term = 'main')
+  ) %>% 
+   select(-X) %>% 
+  rename(variable = brain_region) %>% 
+  tibble::add_column(var.type = 'Volume', .after  = 'variable')
+  
+# Read in subcortical volumes data
+subcort_df <- rbind(
+  here::here('data/subcortical_interaction.csv') %>% 
+    read.csv() %>%
+    tibble::add_column(term = 'interaction'),
+  here::here('data/subcortical_main.csv') %>% 
+    read.csv() %>%
+    tibble::add_column(window = 'all', .after = 'OPE') %>% 
+    tibble::add_column(term = 'main')
+  ) %>% 
+  select(-X) %>% 
+  rename(variable = brain_region) %>% 
+  tibble::add_column(var.type = 'Subcortical Volume', .after  = 'variable')
+
+
+# Join all data.frames
 df <- rbind(nt_df, 
             thick_df, 
-            vol_df)
+            vol_df,
+            subcort_df)
 ```
 
-The present notebook visualizes significant relationships of chemical mixtures to different outcomes: neurotransmitter levels, cortical thickness estimates and brain volumes. For the current version, we focus on a set of measurements taken at **birth**.
+The present notebook visualizes significant relationships of chemical mixtures to different outcomes: neurotransmitter levels, cortical thickness estimates and cortical and subcortical brain volumes. One network is visualized for each of the following time windows: prenatal, birth, three year. 
 
-```{r, echo = FALSE}
-df %>% 
-  filter(window == 'birth')
-```
-
-The nodes (or vertices) of the network must be represented in a `data.frame`.
 
 ```{r}
-# make nodes and links data.frame
-node_name <- df %>% 
-  filter(window == 'birth') %>% 
-  unite('node', 'variable', 'var.type', sep = ' ') %>% 
-  select(OPE, node) %>% 
-  unlist() %>% 
-  unique()
-
-node_type <- c(recode(node_name, `BCEtP` = 'Chem. Mix.', `BDCPP` = 'Chem. Mix.', `DBuP` = 'Chem. Mix.', `DPHP` = 'Chem. Mix.')[1:4],
-               separate(data.frame(node_name), node_name, ' ', into = c('1', '2'))[,"2"] %>% na.omit())
-
-
-nodes <- data.frame(id = seq_len(length(node_name)),
-                    node_name = node_name %>% 
-                      str_replace_all('cortical_thickness', '(CT)') %>% 
-                      str_replace_all('neuro_transmitter', '') %>% 
-                      str_replace_all('volume', '(Volume)'),
-                    node_type = node_type)
-nodes
+## create nodes 
+nodes <- dplyr::union(df %>% select(OPE, var.type, window) %>% rename(variable=OPE), 
+             df %>% select(variable, var.type, window)) %>%  
+  mutate(var.type = ifelse(variable %in% c("BCEtP", "BDCPP", "DBuP", "DPHP"), 'Chem. Mix.', var.type)) %>% 
+  distinct() %>% 
+  mutate(value = 1) %>% 
+  pivot_wider(names_from = 'window', values_from = 'value', values_fill = 0) %>% 
+  mutate(variable = ifelse(var.type == 'Cortical Thickness', paste(variable, '(CT)'), variable)) %>% 
+  mutate(variable = ifelse(var.type == 'Volume', paste(variable, '(Vol.)'), variable)) %>% 
+  mutate(id = seq_len(nrow(.)), 
+         .before = 'variable') %>% 
+  rename(group = var.type)
 ```
-
-Similarly, below is the `data.frame` representing the edges (or links)
 
 ```{r}
 id_node <- function(node.name){
   nodes %>% 
-    filter(node_name == node.name) %>% 
+    filter(variable == node.name) %>% 
     pull(id)
 }
 
 links <- df %>% 
-  filter(window == 'birth') %>% 
-  unite(var, variable, var.type ,sep = ' ') %>% 
-  rename(from = OPE,
-         to = var ) %>% 
-  mutate(to = to %>% 
-         str_replace_all('cortical_thickness', '(CT)') %>%
-         str_replace_all('neuro_transmitter', '') %>%
-         str_replace_all('volume', '(Volume)')) %>% 
+  mutate(variable = ifelse(var.type == 'Cortical Thickness', paste(variable, '(CT)'), variable)) %>% 
+  mutate(variable = ifelse(var.type == 'Volume', paste(variable, '(Vol.)'), variable)) %>% 
+  rename(from = OPE,to = variable) %>% 
   mutate(to = purrr::map_int(to, id_node),
          from = purrr::map_int(from, id_node)) %>% 
-  select(from, to)
+  select(from, to, window, term) %>% 
+  arrange(factor(window, levels=c('prenatal', 'birth', 'three_year')))
 
-links
+# which edges show both main effects and interaction effects?
+#links %>% 
+#  left_join(
+#    links %>% # count terms per edge
+#      group_by(from, to) %>%
+#      summarize(n_terms = n_distinct(term), .groups='drop'), 
+#    by = c('from', 'to')) %>% 
+#  mutate(term = ifelse(n_terms == 2, 'both', term)) %>% 
+#  select(-n_terms) %>% 
+#  distinct()
 ```
 
-```{r}
-net <- graph_from_data_frame(d=links, vertices=nodes, directed=T) 
-# Generate colors based on media type:
-colrs <- setNames(c("gray50", "tomato", "gold", "dodgerblue"), unique(node_type))
+## Visualizations
 
-V(net)$color <- recode(V(net)$node_type, !!!colrs)
+### Prenatal
+
+```{r}
+#| eval: false
+#| echo: false
+
+net <- graph_from_data_frame(d=links %>% 
+                               filter(window == 'prenatal'), 
+                             vertices=nodes %>% 
+                               filter(prenatal == 1), 
+                             directed=T) 
+
+colrs <- setNames(c("gray", "tomato", "gold", "dodgerblue", "springgreen2"), unique(nodes$var.type))
+
+V(net)$color <- recode(V(net)$var.type, !!!colrs)
 V(net)$label <- NA
 V(net)$size <- 20
 
 E(net)$arrow.size <- .4
-E(net)$edge.color <- "gray80"
-
-graph_attr(net, "layout") <- layout_with_kk
-
-plot(net) 
-legend(x=-1.5, y=-1.1, c("Chem. Mix.","Neurotransmitters", "Volumes", "Thickness"), pch=21,
-       col="#777777", pt.bg=colrs, pt.cex=2, cex=.8, bty="n", ncol=1)
-```
-
-```{r}
-# sample n evenly spaced point along a circle (or arc) of radius r (theta = 2 * pi)
-n = 23
-r = 3
-#start = c(1,0)
-#theta = 2 * pi
-
-layout_in_polar <- function(n, r, theta = 2 * pi){
-  start = c(r, 0)
-  # get arclength
-  l <- r * theta / n
-  L <- seq(1, n - 1) * l # list of cumulative arclengths
-  x <- r * cos(L)
-  y <- r * sin(L)
-  rbind(start, data.frame(x, y)) %>% 
-    as.matrix() %>% 
-    unname()
-}
-
-graph_attr(net, "layout") <- rbind(layout_in_polar(4, 1), 
-                                   layout_in_polar(23, 3))
-
-plot(net) 
-legend(x=-1.5, y=-1.1, c("Chem. Mix.","Neurotransmitters", "Volumes", "Thickness"), pch=21,
-       col="#777777", pt.bg=colrs, pt.cex=2, cex=.8, bty="n", ncol=1)
+E(net)$edge.color <- "gray"
 ```
 
 ```{r}
 # We'll start by adding new node and edge attributes to our dataframes. 
-vis.nodes <- nodes
-vis.links <- links
+vizNetwork <- function(vis.nodes, vis.links){
+  
+  vis.nodes$shape  <- "dot"  
+  vis.nodes$shadow <- TRUE # Nodes will drop shadow
+  vis.nodes$title  <- vis.nodes$variable # Text on click
+  vis.nodes$label  <- vis.nodes$variable # Node label
+  #vis.nodes$size   <- vis.nodes$audience.size # Node size
+  vis.nodes$borderWidth <- 2 # Node border width
+  
+  colrs <- setNames(c("gray", "tomato", "gold", "dodgerblue", "chartreuse"), unique(vis.nodes$group))
+  
+  vis.nodes$color.background <- recode(vis.nodes$group, !!!colrs)
+  vis.nodes$color.border <- "black"
+  vis.nodes$color.highlight.background <- "orange"
+  vis.nodes$color.highlight.border <- "darkred"
+  
+  edge.colrs <- setNames(c('gray', 'red'), c("interaction", "main"))
+  vis.links$color <- recode(vis.links$term, !!!edge.colrs)    # line color  
+  #vis.links$width <- 1 # line width
+  vis.links$arrows <- "to" # arrows: 'from', 'to', or 'middle'
+  vis.links$smooth <- TRUE    # should the edges be curved?
+  vis.links$shadow <- FALSE    # edge shadow
+  
+  visnet <- visNetwork(vis.nodes, vis.links, width = 7, height = 10) %>% 
+    visLayout(randomSeed = 56) %>% 
+    visGroups(groupname = "Chem. Mix.", color = 'gray', shape = "dot", color.border = 'black') %>% 
+    visGroups(groupname = "Neurotransmitter", color = 'tomato', shape = "dot", color.border = 'black') %>% 
+    visGroups(groupname = "Cortical Thickness", color = 'dodgerblue', shape = "dot", color.border = 'black') %>% 
+    visGroups(groupname = "Volume", color = 'gold', shape = "dot", color.border = 'black') %>% 
+    visGroups(groupname = "Subcortical Volume", color = 'chartreuse', shape = "dot", color.border = 'black') %>% 
+    visLegend(addEdges = data.frame(arrows = 'to', 
+                                    color = c('gray', 'red'), 
+                                    label = c('interaction', 'main effect'))) %>% 
+    visOptions(highlightNearest = TRUE) 
+  return(visnet)
+}
 
-vis.nodes$shape  <- "dot"  
-vis.nodes$shadow <- TRUE # Nodes will drop shadow
-vis.nodes$title  <- vis.nodes$node_name # Text on click
-vis.nodes$label  <- vis.nodes$node_name # Node label
-#vis.nodes$size   <- vis.nodes$audience.size # Node size
-vis.nodes$borderWidth <- 2 # Node border width
-
-vis.nodes$color.background <- V(net)$color
-vis.nodes$color.border <- "black"
-vis.nodes$color.highlight.background <- "orange"
-vis.nodes$color.highlight.border <- "darkred"
-
-vis.links$width <- 1 # line width
-vis.links$color <- "gray"    # line color  
-vis.links$arrows <- "to" # arrows: 'from', 'to', or 'middle'
-vis.links$smooth <- FALSE    # should the edges be curved?
-vis.links$shadow <- FALSE    # edge shadow
-
-visnet <- visNetwork(vis.nodes, vis.links)
-visnet %>% 
-  visLayout(randomSeed = 56) %>% 
-  visOptions(highlightNearest = TRUE, selectedBy = "node_type")
+vizNetwork(vis.nodes = nodes %>% filter(prenatal == 1 | all == 1),
+           vis.links = links %>% filter(window %in% c('prenatal', 'all'))) 
 ```
+
+### Birth
+
+```{r}
+vizNetwork(vis.nodes = nodes %>% filter(birth == 1 | all == 1),
+           vis.links = links %>% filter(window %in% c('birth', 'all')))
+```
+
+
+### Three year
+
+```{r}
+vizNetwork(vis.nodes = nodes %>% filter(three_year == 1 | all == 1),
+           vis.links = links %>% filter(window %in% c('three_year', 'all')))
+```
+
+## Data
+
+::: {.panel-tabset}
+
+### Pre-Natal
+
+```{r}
+df %>% 
+  filter(window == 'prenatal')
+```
+
+### Birth
+
+```{r}
+df %>% 
+  filter(window == 'birth')
+```
+
+### 3 year
+
+```{r}
+df %>% 
+  filter(window == 'three_year')
+```
+
+:::

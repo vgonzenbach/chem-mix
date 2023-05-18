@@ -1,34 +1,41 @@
 ---
 title: "Network Visualization: Relationship of Chemical Mixtures to Neurotransmitter level, Cortical Thickness and Brain Volumes"
-editor: visual
 author: "Virgilio Gonzenbach"
 date: "`r Sys.Date()`"
 
-format: 
-  html:
-    self-contained: true
-    page-layout: full
+output: 
+  html_document:
+    page_layout: full
     toc: true
-    toc-title: 'Contents'
-    toc-float: true
-    toc-location: left
-    df-print: paged
+    toc_title: 'Contents'
+    toc_float: true
+    toc_location: left
+    df_print: paged
     theme: spacelab
-    code-fold: true
-    code-overflow: wrap
-    code-tools: true
-    fig-width: 10
-    fig-height: 7
-    
-execute:
-  echo: true
-  error: false
-  cache: false
-  warning: false
-  message: false
-  results: asis
-  freeze: auto
+    code_folding: hide
+    code_overflow: wrap
+    code_tools: true
+    fig_width: 10
+    fig_height: 7
 ---
+
+<style type="text/css">
+.main-container {
+  max-width: 1800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      error = FALSE,
+                      cache = FALSE,
+                      warning = FALSE,
+                      message = FALSE)
+```
 
 ```{r data_prep}
 #| message: false
@@ -99,8 +106,7 @@ df <- rbind(nt_df,
             subcort_df)
 ```
 
-The present notebook visualizes significant relationships of chemical mixtures to different outcomes: neurotransmitter levels, cortical thickness estimates and cortical and subcortical brain volumes. One network is visualized for each of the following time windows: prenatal, birth, three year. 
-
+The present notebook visualizes statistically significant effects of chemical mixtures to different outcomes: neurotransmitter levels, cortical thickness estimates and cortical and subcortical brain volumes. One network is visualized for each of the following time windows: prenatal, birth, three year.
 
 ```{r}
 ## create nodes 
@@ -194,7 +200,7 @@ vizNetwork <- function(vis.nodes, vis.links){
   vis.links$smooth <- TRUE    # should the edges be curved?
   vis.links$shadow <- FALSE    # edge shadow
   
-  visnet <- visNetwork(vis.nodes, vis.links, width = 7, height = 10) %>% 
+  visnet <- visNetwork(vis.nodes, vis.links, width = 1080) %>% 
     visLayout(randomSeed = 56) %>% 
     visGroups(groupname = "Chem. Mix.", color = 'gray', shape = "dot", color.border = 'black') %>% 
     visGroups(groupname = "Neurotransmitter", color = 'tomato', shape = "dot", color.border = 'black') %>% 
@@ -204,7 +210,7 @@ vizNetwork <- function(vis.nodes, vis.links){
     visLegend(addEdges = data.frame(arrows = 'to', 
                                     color = c('gray', 'red'), 
                                     label = c('interaction', 'main effect'))) %>% 
-    visOptions(highlightNearest = TRUE) 
+    visOptions(highlightNearest = TRUE, selectedBy = 'group') 
   return(visnet)
 }
 
@@ -227,9 +233,7 @@ vizNetwork(vis.nodes = nodes %>% filter(three_year == 1 | all == 1),
            vis.links = links %>% filter(window %in% c('three_year', 'all')))
 ```
 
-## Data
-
-::: {.panel-tabset}
+## Data {.tabset}
 
 ### Pre-Natal
 
@@ -251,5 +255,3 @@ df %>%
 df %>% 
   filter(window == 'three_year')
 ```
-
-:::

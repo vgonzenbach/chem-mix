@@ -1,7 +1,7 @@
-"","OPE","brain_region","p.values"
-"3","BDCPP","parstriangularis","0.014"
-"4","BDCPP","transversetemporal","0.014"
-"6","DPHP","transversetemporal","0.019"
-"5","DPHP","isthmuscingulate","0.024"
-"2","BCEtP","precentral","0.034"
-"1","BCEtP","posteriorcingulate","0.040"
+term,estimate,p.value,outcome
+BCEtP,0.09050758701299168,0.039977606518647346,posteriorcingulate
+BCEtP,0.28598548831744686,0.03434218521227983,precentral
+BDCPP,-0.1776379173376308,0.013870088466685027,parstriangularis
+BDCPP,-0.04099457520775655,0.01427790739139212,transversetemporal
+DPHP,-0.07890216160812027,0.023559629449978914,isthmuscingulate
+DPHP,-0.04426337528449356,0.018605891383365214,transversetemporal

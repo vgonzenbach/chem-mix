@@ -1,5 +1,5 @@
-,OPE,brain_region,p.values
-4,BDCPP,insula,0.019
-1,BCEtP,rh_frontalpole,0.026
-3,BDCPP,lh_posteriorcingulate,0.035
-2,BCEtP,rh_temporalpole,0.041
+term,estimate,p.value,outcome
+BCEtP,0.05301684689303656,0.02555096749337482,rh_frontalpole
+BCEtP,0.061776263233913775,0.041486836642659175,rh_temporalpole
+BDCPP,-0.031350015754875823,0.034681310272672405,lh_posteriorcingulate
+BDCPP,-0.033059818806444846,0.018750355398205465,insula

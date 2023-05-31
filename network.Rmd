@@ -1,6 +1,6 @@
 ---
-title: "Network Visualization: Relationship of Chemical Mixtures to Neurotransmitter level, Cortical Thickness and Brain Volumes"
-author: "Virgilio Gonzenbach"
+title: "Network Visualization: Relationship of Chemical Mixtures to Brain Metabolite level, Cortical Thickness and Brain Volumes"
+author: "Virgilio Gonzenbach, Zheng Ren, Quy Cao"
 date: "`r Sys.Date()`"
 
 output: 
@@ -8,12 +8,12 @@ output:
     page_layout: full
     toc: true
     toc_title: 'Contents'
-    toc_float: true
     toc_location: left
+    toc_float: true
     df_print: paged
-    theme: spacelab
     code_folding: hide
     code_overflow: wrap
+    theme: journal
     code_tools: true
     fig_width: 10
     fig_height: 7
@@ -26,8 +26,6 @@ output:
   margin-right: auto;
 }
 </style>
-
-
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE,
@@ -46,13 +44,13 @@ library(stringr)
 library(igraph)
 library(visNetwork)
 
-# Read in neurotransmitter data
+# Read in Brain Metabolite data
 nt_df <- read.csv(here::here('data/neurotransmitter_interaction.csv'), row.names = NULL) %>% 
   select(-X) %>% 
   pivot_longer(cols = c("mI", "NAA", "Cr", "Cho", "Glu", "Glx"), 
                names_to = 'variable', 
                values_to = 'p.values') %>% 
-  tibble::add_column(var.type = 'Neurotransmitter', .after  = 'variable') %>% 
+  tibble::add_column(var.type = 'Brain Metabolite', .after  = 'variable') %>% 
   filter(p.values < 0.1) %>% 
    tibble::add_column(term = 'interaction')
 
@@ -106,7 +104,12 @@ df <- rbind(nt_df,
             subcort_df)
 ```
 
-The present notebook visualizes statistically significant effects of chemical mixtures to different outcomes: neurotransmitter levels, cortical thickness estimates and cortical and subcortical brain volumes. One network is visualized for each of the following time windows: prenatal, birth, three year.
+
+## Summary 
+
+The present notebook visualizes statistically significant effects of chemical mixtures (OPEs) to different outcomes: brain metabolites, cortical thickness estimates and cortical and subcortical brain volumes. A Multiple Informant Model was applied to test main effects and window specific (interaction) effects according to the following formula: 
+
+> **Outcome ∼ log(OPE) * window + Cotinine + Sex + Race + Home Score + Maternal Education**
 
 ```{r}
 ## create nodes 
@@ -151,29 +154,19 @@ links <- df %>%
 #  distinct()
 ```
 
-## Visualizations
+## Network Visualizations
 
-### Prenatal
+The first network visualization summarizes the main effects of chemical mixtures (in red arrows).
 
-```{r}
-#| eval: false
-#| echo: false
+Window-specific networks are then presented, with gray arrows representing the presence of a significant interaction term (i.e. time window-specific effect), and with main effects being projected again as red arrows. 
 
-net <- graph_from_data_frame(d=links %>% 
-                               filter(window == 'prenatal'), 
-                             vertices=nodes %>% 
-                               filter(prenatal == 1), 
-                             directed=T) 
+The visualizations are interactive including the following features:  
 
-colrs <- setNames(c("gray", "tomato", "gold", "dodgerblue", "springgreen2"), unique(nodes$var.type))
+1. Draggable nodes. 
+2. Hovering over a node reveals its name in a pop-up window. 
+3. Clicking on a node highlights its connection to other nodes. 
+4. Drop-down menu allows for selecting nodes by type.  
 
-V(net)$color <- recode(V(net)$var.type, !!!colrs)
-V(net)$label <- NA
-V(net)$size <- 20
-
-E(net)$arrow.size <- .4
-E(net)$edge.color <- "gray"
-```
 
 ```{r}
 # We'll start by adding new node and edge attributes to our dataframes. 
@@ -186,8 +179,10 @@ vizNetwork <- function(vis.nodes, vis.links){
   #vis.nodes$size   <- vis.nodes$audience.size # Node size
   vis.nodes$borderWidth <- 2 # Node border width
   
-  colrs <- setNames(c("gray", "tomato", "gold", "dodgerblue", "chartreuse"), unique(vis.nodes$group))
+  colrs <- setNames(c("gray", "tomato", "gold", "dodgerblue", "chartreuse"), 
+                    c("Chem. Mix.", "Brain Metabolite", "Cortical Thickness", "Volume", "Subcortical Volume"))
   
+  # adapt to variable 
   vis.nodes$color.background <- recode(vis.nodes$group, !!!colrs)
   vis.nodes$color.border <- "black"
   vis.nodes$color.highlight.background <- "orange"
@@ -203,20 +198,77 @@ vizNetwork <- function(vis.nodes, vis.links){
   visnet <- visNetwork(vis.nodes, vis.links, width = 1080) %>% 
     visLayout(randomSeed = 56) %>% 
     visGroups(groupname = "Chem. Mix.", color = 'gray', shape = "dot", color.border = 'black') %>% 
-    visGroups(groupname = "Neurotransmitter", color = 'tomato', shape = "dot", color.border = 'black') %>% 
+    visGroups(groupname = "Brain Metabolite", color = 'tomato', shape = "dot", color.border = 'black') %>% 
     visGroups(groupname = "Cortical Thickness", color = 'dodgerblue', shape = "dot", color.border = 'black') %>% 
     visGroups(groupname = "Volume", color = 'gold', shape = "dot", color.border = 'black') %>% 
     visGroups(groupname = "Subcortical Volume", color = 'chartreuse', shape = "dot", color.border = 'black') %>% 
-    visLegend(addEdges = data.frame(arrows = 'to', 
-                                    color = c('gray', 'red'), 
-                                    label = c('interaction', 'main effect'))) %>% 
     visOptions(highlightNearest = TRUE, selectedBy = 'group') 
+  
+  if (all(unique(vis.links$color) == 'red')){
+    visnet <- visnet %>% 
+      visLegend(addEdges = data.frame(arrows = 'to',
+                                      color = c('red'),
+                                      label = c('main effect')))
+  } else {
+    visnet <- visnet %>% 
+      visLegend(addEdges = data.frame(arrows = 'to',
+                                      color = c('gray', 'red'),
+                                      label = c('interaction', 'main effect')))
+  }
+    
+    
   return(visnet)
 }
-
-vizNetwork(vis.nodes = nodes %>% filter(prenatal == 1 | all == 1),
-           vis.links = links %>% filter(window %in% c('prenatal', 'all'))) 
 ```
+
+### Main Effect (across all windows)
+
+
+
+```{r}
+vizNetwork(vis.nodes = nodes %>% filter(all == 1),
+           vis.links = links %>% filter(window  == 'all'))
+```
+
+<details>
+  <summary>Table of Main Effects (click to toggle) </summary>
+  
+```{r}
+(main_df <- df %>% 
+  filter(window == 'all') %>% 
+  select(-window) %>% 
+  rename(outcome = variable,
+         effect = term) %>% 
+  unite(outcome, outcome, var.type, sep = ' ') %>% 
+  relocate(effect, .before = 'OPE'))
+```
+
+</details>
+
+### Prenatal 
+
+
+```{r}
+vizNetwork(vis.nodes = nodes %>% filter(prenatal == 1 | all == 1),
+           vis.links = links %>% filter(window %in% c('prenatal', 'all')))
+```
+
+<details>
+  <summary>Table of Interaction Effects (click to toggle) </summary>
+  
+```{r}
+(prenatal_df <- df %>% 
+  filter(window == 'prenatal') %>% 
+  select(-window) %>% 
+  rename(outcome = variable,
+         effect = term) %>% 
+  unite(outcome, outcome, var.type, sep = ' ') %>% 
+  mutate(outcome = stringr::str_replace(outcome, 'Brain Metabolite', '') %>% 
+           stringr::str_replace('Subcortical', '')) %>% 
+  relocate(effect, .before = 'OPE'))
+```
+
+</details>
 
 ### Birth
 
@@ -224,6 +276,23 @@ vizNetwork(vis.nodes = nodes %>% filter(prenatal == 1 | all == 1),
 vizNetwork(vis.nodes = nodes %>% filter(birth == 1 | all == 1),
            vis.links = links %>% filter(window %in% c('birth', 'all')))
 ```
+
+<details>
+  <summary>Table of Interaction Effects (click to toggle)</summary>
+  
+```{r}
+(birth_df <- df %>% 
+  filter(window == 'birth') %>% 
+  select(-window) %>% 
+  rename(outcome = variable,
+         effect = term) %>% 
+  unite(outcome, outcome, var.type, sep = ' ') %>% 
+  mutate(outcome = stringr::str_replace(outcome, 'Brain Metabolite', '') %>% 
+           stringr::str_replace('Subcortical', '')) %>% 
+  relocate(effect, .before = 'OPE'))
+```
+
+</details>
 
 
 ### Three year
@@ -233,25 +302,39 @@ vizNetwork(vis.nodes = nodes %>% filter(three_year == 1 | all == 1),
            vis.links = links %>% filter(window %in% c('three_year', 'all')))
 ```
 
-## Data {.tabset}
-
-### Pre-Natal
-
+<details>
+  <summary>Table of Interaction Effects (click to toggle) </summary>
+  
 ```{r}
-df %>% 
-  filter(window == 'prenatal')
+(three_year_df <- df %>% 
+  filter(window == 'three_year') %>% 
+  select(-window) %>% 
+  rename(outcome = variable,
+         effect = term) %>% 
+  unite(outcome, outcome, var.type, sep = ' ') %>% 
+  mutate(outcome = stringr::str_replace(outcome, 'Brain Metabolite', '') %>% 
+           stringr::str_replace('Subcortical', '')) %>% 
+  relocate(effect, .before = 'OPE'))
+
 ```
 
-### Birth
+</details>
+
+## Effect counts across all windows
+
+### By Outcome
 
 ```{r}
-df %>% 
-  filter(window == 'birth')
+rbind(main_df, prenatal_df, birth_df, three_year_df) %>% 
+  count(outcome, name = 'number_of_effects') %>% 
+  arrange(desc(number_of_effects))
 ```
 
-### 3 year
+### By OPE
 
 ```{r}
-df %>% 
-  filter(window == 'three_year')
+rbind(main_df, prenatal_df, birth_df, three_year_df) %>% 
+  count(OPE, name = 'number_of_effects') %>% 
+  arrange(desc(number_of_effects))
 ```
+

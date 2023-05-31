@@ -5,3 +5,5 @@
 in/
 R-Network-Visualization-Workshop/
 renv/
+*_cache/
+*_files/
